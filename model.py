@@ -19,12 +19,9 @@ class TSAE(mesa.Model):
         self.current_id = 0  # 添加current_id属性
 
         #主体坐标
-        self.o_width=20 #owner坐标
-        self.o_height=30
-        self.c_width=30 #demander坐标
-        self.c_height=30
-        self.p_width=15 #platform坐标
-        self.p_height=15
+        self.width = width
+        self.height = height
+
 
         #初始数量
         self.num_agents_TO = 23
@@ -46,29 +43,37 @@ class TSAE(mesa.Model):
             model_reporters={}
         )
 
-        # 创建平台
-        platform = Platform(self.next_id(), self)
+        # 创建平台1
+        platform1 = Platform(self.next_id(), self,1)
         # 加入网格
-        x = self.p_height
-        y = self.p_width
-        self.grid.place_agent(platform, (x, y))
-        self.schedule.add(platform)
+        x = int((self.width/2)+1)
+        y = int(self.height/2)
+        self.grid.place_agent(platform1, (x, y))
+        self.schedule.add(platform1)
+
+        # 创建平台2
+        platform2 = Platform(self.next_id(), self,2)
+        # 加入网格
+        x = int((self.width/2))
+        y = int((self.height/2))
+        self.grid.place_agent(platform2, (x, y))
+        self.schedule.add(platform2)
 
         # 创建初始owner
         for i in range(self.num_agents_TO):
             owners = Owners(self.next_id(), self)
             # 加入网格
-            x = self.random.randrange(self.o_width,self.c_width)
-            y = self.random.randrange(self.o_height)
+            x = self.random.randrange(0, int(self.width / 2))
+            y = self.random.randrange(self.height)
             self.grid.place_agent(owners, (x, y))
             self.schedule.add(owners)
 
         # 创建初始demander
         for i in range(self.num_agents_TSS):
-            consumers = Consumers(self.next_id())
+            consumers = Consumers(self.next_id(),self)
             # 加入网格
-            x = self.random.randrange(self.o_width)
-            y = self.random.randrange(self.c_height)
+            x = self.random.randrange(int(self.width / 2), self.width)
+            y = self.random.randrange(self.height)
             self.grid.place_agent(consumers, (x, y))
             self.schedule.add(consumers)
 
@@ -82,22 +87,30 @@ class TSAE(mesa.Model):
     def calculate_satisfaction_rate(self):
 
         return
+
+    #周期性移除Agent
     def remove_negative_wealth_agents(self):
-        return
+        negative_wealth_agents = [agent for agent in self.schedule.agents if agent.wealth < 0]
+        for agent in negative_wealth_agents:
+            # 如果agent是Platform代理，则跳过当前迭代
+            if isinstance(agent, Platform):
+                continue
+            self.schedule.remove(agent)
+            self.grid.remove_agent(agent)
 
     #周期性进入新的主体
     def add_random_agents(self, num_owners, num_consumers):
         for i in range(num_owners):
             owner = Owners(self.next_id(), self)
-            x = self.random.randrange(self.o_width, self.c_width)
-            y = self.random.randrange(self.o_height)
+            x = self.random.randrange(0, int(self.width / 2))
+            y = self.random.randrange(self.height)
             self.grid.place_agent(owner, (x, y))
             self.schedule.add(owner)
 
         for i in range(num_consumers):
             consumer = Consumers(self.next_id(), self)
-            x = self.random.randrange(self.o_width)
-            y = self.random.randrange(self.c_height)
+            x = self.random.randrange(int(self.width / 2), self.width)
+            y = self.random.randrange(self.height)
             self.grid.place_agent(consumer, (x, y))
             self.schedule.add(consumer)
 
@@ -110,10 +123,10 @@ class TSAE(mesa.Model):
     def step(self):
         self.schedule.step()
 
-        matches_successful,self.successful_matches,self.total_matches=self.match_result()
+        #matches_successful,self.successful_matches,self.total_matches=self.match_result()
         self.capital_settlement(matches_successful)
-        self.remove_negative_wealth_agents()#出
-        self.add_random_agents(self.num_owners,self.num_consumers)#进
+        self.remove_negative_wealth_agents()  # 出
+        self.add_random_agents(self.enter_owner_num, self.enter_demander_num)  # 进
         self.datacollector.collect(self)
 
 
@@ -127,7 +140,7 @@ if __name__ == "__main__":
     all_results = pd.DataFrame()
 
     for run in range(1,11):
-        model = TSAE(20, 30, 30,6,0.1)
+        model = TSAE()
     # 记录循环开始时间
         start_time = time.time()
 
