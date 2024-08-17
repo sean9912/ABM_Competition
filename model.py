@@ -124,7 +124,7 @@ class TSAE(mesa.Model):
         self.schedule.step()
 
         #matches_successful,self.successful_matches,self.total_matches=self.match_result()
-        self.capital_settlement(matches_successful)
+        # self.capital_settlement(matches_successful)
         self.remove_negative_wealth_agents()  # 出
         self.add_random_agents(self.enter_owner_num, self.enter_demander_num)  # 进
         self.datacollector.collect(self)

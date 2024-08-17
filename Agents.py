@@ -218,6 +218,7 @@ class Consumers(mesa.Agent):
         new_position = self.random.choice(possible_steps)
         self.model.grid.move_agent(self, new_position)
 
+    #效用函数计算，还未完成
     def unify_calculation(self, TSE_number, TSE_x, TSE_y):
         period = self.model.schedule.steps()
 
