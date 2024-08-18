@@ -52,7 +52,7 @@ class Owners(mesa.Agent):
         return Level
 
     # 效用计算
-    def unify_calculation(self, TSE_number, TSE_x, TSE_y):
+    def unify_calculation(self, TSE_number, TSE_x, TSE_y, current_TSE):
         period = self.model.schedule.steps()
 
         if self.TSE == 0:
@@ -95,11 +95,12 @@ class Owners(mesa.Agent):
 
         utility = (overall_average_revenue
                    + len(Onwer_in_category) * self.network_coeff
-                   - self.enter_cost
+                   - self.enter_cost * abs(current_TSE - TSE_number)
                    - self.inertia_coeff * self.enter_time
                    - self.strategy_coeff * math.sqrt((self.x - TSE_x) ** 2 + (self.y - TSE_y) ** 2))
         return utility
 
+    # 战略坐标计算
     def x_y_calculation(self, TSE_number):
         # 获取所有 TSE 为number 的 Owner agents
         Onwer_in_SameTSE = [agent for agent in self.model.schedule.agents if
@@ -132,12 +133,12 @@ class Owners(mesa.Agent):
 
         return x, y
 
-    # 初始选择TSE
+    # 选择TSE
     def TSE_decision(self):
         x1, y1 = self.x_y_calculation(1)
         x2, y2 = self.x_y_calculation(2)
-        utility1 = self.unify_calculation(1, x1, x2)
-        utility2 = self.unify_calculation(2, x1, x2)
+        utility1 = self.unify_calculation(1, x1, x2, self.TSE)
+        utility2 = self.unify_calculation(2, x1, x2, self.TSE)
         if utility1 > utility2:
             if self.TSE == 1:
                 self.enter_time += 1
@@ -188,7 +189,6 @@ class Consumers(mesa.Agent):
         self.Match_time = 0 # 等待匹配的周期
         self.satisfaction = False # 是否满意技术标准
         self.live = True  # 是否还活着
-        self.TSE = self.initial_TSE_decision()  # 初始阶段决定加入哪个TSE
 
         self.utility = 0  # 成本加成率
         self.market = random.randint(30, 100)
@@ -200,11 +200,12 @@ class Consumers(mesa.Agent):
         self.knowledge = self.generate_tech_matrix(self.categories)
 
         self.demand = self.generate_ts_demand(self.knowledge) # 标准需求
-        self.TSE = self.initial_TSE_decision()  # 初始阶段决定加入哪个TSE
+        self.TSE = 0  # 初始阶段决定加入哪个TSE
 
         self.x = random.uniform(0, 1)  # 战略空间坐标x
         self.y = random.uniform(0, 1)  # 战略空间坐标y
 
+        self.revenue = {}  # 每个周期的收益字典
         self.network_coeff = 0.1  # 网络效应系数
         self.enter_cost = 5  # 生态进入成本
         self.inertia_coeff = 0.1  # 惯性成本系数
@@ -219,17 +220,17 @@ class Consumers(mesa.Agent):
         self.model.grid.move_agent(self, new_position)
 
     #效用函数计算，还未完成
-    def unify_calculation(self, TSE_number, TSE_x, TSE_y):
+    def unify_calculation(self, TSE_number, TSE_x, TSE_y, current_TSE):
         period = self.model.schedule.steps()
 
         if self.TSE == 0:
-            Onwer_in_category = [agent for agent in self.model.schedule.agents if
-                                 isinstance(agent, Owners) and agent.TSE == TSE_number]
+            Consumers_in_category = [agent for agent in self.model.schedule.agents if
+                                 isinstance(agent, Consumers) and agent.TSE == TSE_number]
 
             # 初始化一个列表来存储每个 Owner 的过去10个step的平均revenue值
             average_revenue_values = []
 
-            for owner in Onwer_in_category:
+            for owner in Consumers_in_category:
                 # 获取过去10个step的revenue值
                 revenues = []
                 for i in range(max(0, period - 10), period):
@@ -320,8 +321,8 @@ class Consumers(mesa.Agent):
     def TSE_decision(self):
         x1, y1 = self.x_y_calculation(1)
         x2, y2 = self.x_y_calculation(2)
-        utility1 = self.unify_calculation(1, x1, x2)
-        utility2 = self.unify_calculation(2, x1, x2)
+        utility1 = self.unify_calculation(1, x1, x2, self.TSE)
+        utility2 = self.unify_calculation(2, x1, x2, self.TSE)
         if utility1 > utility2:
             if self.TSE == 1:
                 self.enter_time += 1
@@ -478,10 +479,10 @@ class Consumers(mesa.Agent):
 
     def step(self):
         self.move()
+        self.TSE_decision()
         if self.satisfaction == True:
             self.Demand_iterate()
-        if self.model.schedule.steps > 0:
-            self.TSE_decision()
+
 
 class Platform(mesa.Agent):
     """"平台"""
