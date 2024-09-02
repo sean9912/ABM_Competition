@@ -6,8 +6,8 @@ import pandas as pd
 
 
 class TSAE(mesa.Model):
-    def __init__(self, width=30, height=30, match_threshold=6, demand_iteration=0.1, enter_owner_num=1,
-                 enter_demander_num=3, discount1=0.5, discount2=0.5, Enter_time = 0, butie_module = [False, False, False, False, False, False],
+    def __init__(self, width=30, height=30, match_threshold=6, demand_iteration=0.1, enter_owner_num=2,
+                 enter_demander_num=4, discount1=0.5, discount2=0.5, Enter_time = 0, butie_module = [1, 1, 1, 1, 1, 1],
                  butie_fee = 0):
         # 重写
         self.match_threshold = match_threshold
@@ -136,13 +136,19 @@ class TSAE(mesa.Model):
 
     # 标准匹配
     def match_result(self):
-        Platform1 = [agent for agent in self.schedule.agents if
+        if self.schedule.steps % 1 == 0 or self.schedule.steps == 1:
+            Platform1 = [agent for agent in self.schedule.agents if
                      isinstance(agent, Platform) and agent.TSE == 1]
-        Platform2 = [agent for agent in self.schedule.agents if
+            Platform2 = [agent for agent in self.schedule.agents if
                      isinstance(agent, Platform) and agent.TSE == 2]
 
-        TS1 = Platform1[0].match()
-        TS2 = Platform2[0].match()
+            TS1 = Platform1[0].match()
+            TS2 = Platform2[0].match()
+
+            print(TS1)
+            print(TS2)
+
+
 
     # 收益分配
     def profit_distribution(self):
@@ -156,22 +162,30 @@ class TSAE(mesa.Model):
                 market_reality, total_revenue = consumer.market_calculation()
                 #consumer.wealth += consumer.wealth + self.profit_coff3 * total_revenue - market_reality * consumer.production_cost - consumer.period_cost
                 consumer.wealth += consumer.wealth + self.profit_coff3 * total_revenue
+                consumer.revenue[self.schedule.steps] = self.profit_coff3 * total_revenue
 
                 # 平台分收益
                 platform_same = [agent for agent in self.schedule.agents if
                              isinstance(agent, Platform) and agent.TSE == consumer.TSE]
                 platform_same[0].wealth += total_revenue * self.profit_coff2
 
-                #提供者收益
+                #提供者初始化收益
                 for agent in platform_same[0].Provider_participate:
-                    agent.wealth += total_revenue * self.profit_coff1
+                    if agent != None:
+                        agent.revenue[self.schedule.steps] = 0
+
+                #收益分配
+                for agent in platform_same[0].Provider_participate:
+                    if agent != None:
+                        agent.wealth += total_revenue * self.profit_coff1
+                        agent.revenue[self.schedule.steps] += total_revenue * self.profit_coff1
 
         return
 
     def capital_settlement(self):
         # 需求者资本结算
         consumers = [agent for agent in self.schedule.agents if
-                     isinstance(agent, Consumers)]
+                     isinstance(agent, Consumers) and agent.satisfaction == True]
 
         for consumer in consumers:
             market_reality, total_revenue = consumer.market_calculation()
@@ -200,19 +214,27 @@ class TSAE(mesa.Model):
         Provider_in_catogery2 = [agent for agent in self.schedule.agents if
                                  isinstance(agent, Owners) and agent.TSE == 2]
 
+        Number_satification1 = [agent for agent in self.schedule.agents if
+                                 isinstance(agent, Consumers) and agent.TSE == 1 and agent.satisfaction]
+        Number_satification2 = [agent for agent in self.schedule.agents if
+                               isinstance(agent, Consumers) and agent.TSE == 2 and agent.satisfaction]
+
         print(len(Demander_total), len(Demander_in_catogery1), len(Demander_in_catogery2))
         print(len(Provider_total), len(Provider_in_catogery1), len(Provider_in_catogery2))
+        print(len(Number_satification1),len(Number_satification2))
 
 
     def step(self):
         self.schedule.step()
-        self.information_collect() #
+        print("运行周期：" + str(self.schedule.steps))
         self.match_result() # 标准制定和匹配
         self.profit_distribution() # 收益分配
         self.capital_settlement() # 资本结算
         self.remove_negative_wealth_agents()  # 出
+        self.information_collect()  #
+        self.datacollector.collect(self)  # 数据收集
         self.add_random_agents(self.enter_owner_num, self.enter_demander_num)  # 进
-        self.datacollector.collect(self) # 数据收集
+
 
     def run_model(self, n):
         for i in range(n):

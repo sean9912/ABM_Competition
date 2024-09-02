@@ -12,11 +12,12 @@ class Owners(mesa.Agent):
 
         super().__init__(unique_id, model)
         self.wealth = random.uniform(100, 120)  # 初始资本量
-        self.module = random.randint(1, 6)  # 随机一个技术模块
-        self.level = self.generation_Level()  # 技术等级
-        self.PrimeLevel = self.level #初始等级
         self.live = True #是否还活着
         self.TSE = self.initial_TSE()  # 初始阶段决定加入哪个TSE
+
+        self.module = self.initial_module()
+        self.level = self.generation_Level()  # 技术等级
+        self.PrimeLevel = self.level #初始等级
         self.revenue = {}  # 每个周期的收益字典
         self.network_coeff = 0.1  # 网络效应系数
         self.enter_cost = 20  # 生态进入成本
@@ -24,10 +25,30 @@ class Owners(mesa.Agent):
         self.enter_time = 0  # 进入生态的时间
         self.x = random.uniform(0, 1)  # 战略空间坐标x
         self.y = random.uniform(0, 1)  # 战略空间坐标y
-        self.strategy_coeff = 0.1  # 战略选择成本系数
+        self.strategy_coeff = 50.0  # 战略选择成本系数
         self.test = 0 # 技术测试费用
         self.Period_cost = 0 #周期性消耗
 
+        #策略4 承诺策略
+        self.order = 1 if random.uniform(0, 1) > 0.2 else 0
+
+    # 确保周期初始每个模块都有技术
+    def initial_module(self):
+        if self.model.schedule.steps == 0:
+            Onwer_in_category = [agent for agent in self.model.schedule.agents
+                                 if isinstance(agent, Owners) and agent.TSE == self.TSE]
+
+            required_modules = set(range(1, 7))
+            existing_modules = {agent.module for agent in Onwer_in_category}
+            missing_modules = required_modules - existing_modules
+            if missing_modules:
+                chosen_module = missing_modules.pop()
+            else:
+                chosen_module = random.randint(1, 6)
+        else:
+            chosen_module = random.randint(1, 6)
+
+        return chosen_module
 
     # 主体移动
     def move(self):#每次移动一个格子
@@ -46,10 +67,7 @@ class Owners(mesa.Agent):
         if Onwer_in_category and self.model.schedule.steps > 0:
             max_level = max(owner.level for owner in Onwer_in_category)
             min_level = min(owner.level for owner in Onwer_in_category)
-            if min_level + 1 < max_level - 1:
-                Level = random.randint(min_level + 1, max_level - 1) #均匀分布
-            else:
-                Level = min_level  # 排除特殊情况
+            Level = random.randint(max_level - 2, max_level + 2) #均匀分布
         else:
             Level = random.randint(1, 6) #初始阶段的技术等级为[1.6]
         return Level
@@ -106,9 +124,17 @@ class Owners(mesa.Agent):
             else:
                 overall_average_revenue = 0
 
+        # 读取平台
+        platform_same = [agent for agent in self.model.schedule.agents if
+                                        isinstance(agent, Platform) and agent.TSE == TSE_number]
+
+        Fee = 0
+        if platform_same[0].butie_module[self.module-1] == 1:
+            Fee = platform_same[0].butie_Fee
+
         utility = (overall_average_revenue
                     # 策略3 资源独占，还没写完
-
+                   + Fee
                    + len(Onwer_in_category) * self.network_coeff
                    - self.enter_cost * abs(current_TSE - TSE_number)
                    - self.inertia_coeff * self.enter_time
@@ -140,15 +166,16 @@ class Owners(mesa.Agent):
 
         # 计算 x 值
         if ((total_Onwer_in_SameTSE - min_diff) - (total_Onwer_in_SameTSE - max_diff)) != 0:
-            x = ((total_Onwer_in_SameTSE - len(Onwer_in_SameTSE_each[self.module])) - (
-                    total_Onwer_in_SameTSE - max_diff)) / (
-                        (total_Onwer_in_SameTSE - min_diff) - (total_Onwer_in_SameTSE - max_diff))
+            x = (diff_list[self.module - 1] - min_diff) / (max_diff - min_diff)
         else:
             x = 0
 
+        diff_list2 = [len(Onwer_in_SameTSE_each[module]) for module in range(1, 7)]
+        max_diff2 = max(diff_list2)
+        min_diff2 = min(diff_list2)
         # 计算 y 值
-        if (max_diff - min_diff) !=0:
-            y = (len(Onwer_in_SameTSE_each[self.module]) - min_diff) / (max_diff - min_diff)
+        if (max_diff2 - min_diff2) != 0:
+            y = (diff_list2[self.module - 1] - min_diff2) / (max_diff2 - min_diff2)
         else:
             y = 0
 
@@ -158,9 +185,9 @@ class Owners(mesa.Agent):
     def TSE_decision(self):
         x1, y1 = self.x_y_calculation(1)
         x2, y2 = self.x_y_calculation(2)
-        utility1 = self.unify_calculation(1, x1, x2, self.TSE)
-        utility2 = self.unify_calculation(2, x1, x2, self.TSE)
-
+        utility1 = self.unify_calculation(1, x1, y1, self.TSE)
+        utility2 = self.unify_calculation(2, x2, x2, self.TSE)
+        time = self.model.schedule.steps
         Platform1 = [agent for agent in self.model.schedule.agents if
                             isinstance(agent, Platform) and agent.TSE == 1]
 
@@ -171,27 +198,31 @@ class Owners(mesa.Agent):
         if utility1 > utility2:
             if self.TSE == 1:
                 self.enter_time += 1
+                self.wealth += Platform1[0].butie_Fee
             else:
                 self.TSE = 1
                 self.enter_time = 1
                 self.test = Platform1[0].test
                 self.Period_cost = Platform1[0].Period_cost_provider
+                self.wealth += Platform1[0].butie_Fee
         else:
             if self.TSE == 2:
                 self.enter_time += 1
+                self.wealth += Platform2[0].butie_Fee
             else:
                 self.TSE = 2
                 self.enter_time = 1
                 self.test = Platform2[0].test
                 self.Period_cost = Platform2[0].Period_cost_provider
+                self.wealth += Platform2[0].butie_Fee
 
 
     # 技术升级决策
     def upgrade(self):
         flag = False # 判断是否创新成功
-        Fee_max = 200  # 升级费用阈值
+        Fee_max = 50  # 升级费用阈值
         Fee = min(random.uniform(0, 0.42 * self.wealth), Fee_max)  # 升级技术费用
-        Possible = min(Fee / Fee_max, 0.8)   # 升级成功概率
+        Possible = min(Fee / Fee_max, 0.9)   # 升级成功概率
 
         #选取在同一个TSE中，模块相同的owner
         Onwer_in_catogery = [agent for agent in self.model.schedule.agents if
@@ -224,13 +255,14 @@ class Consumers(mesa.Agent):
 
         super().__init__(unique_id, model)
         self.wealth = random.uniform(100, 120)  # 初始资本量
-        self.match_threshold = random.randint(5, 15) # 阈值
-        self.demand_iteration = 0.1 # 需求迭代概率
+        #self.match_threshold = random.randint(5, 15) # 阈值
+        self.match_threshold = 10
+        self.demand_iteration = 0.8 # 需求迭代概率
         self.Match_time = 0 # 等待匹配的周期
         self.satisfaction = False # 是否满意技术标准
         self.live = True  # 是否还活着
         self.period_cost = 0 #周期性消耗
-
+        self.develop_cost = 1 #单位jishushengjichengben
         self.market = random.randint(30, 100)
         self.production_cost = random.uniform(10, 20)  # 生产成本
 
@@ -247,17 +279,20 @@ class Consumers(mesa.Agent):
         self.y = random.uniform(0, 1)  # 战略空间坐标y
 
         self.revenue = {}  # 每个周期的收益字典
-        self.network_coeff = 0.1  # 网络效应系数
+        self.network_coeff = 0.05  # 网络效应系数
         self.enter_cost = 5  # 生态进入成本
-        self.inertia_coeff = 0.1  # 惯性成本系数
+        self.inertia_coeff = 0.05  # 惯性成本系数
         self.enter_time = 0  # 进入生态的时间
-        self.strategy_coeff = 0.1  # 战略选择成本系数
+        self.strategy_coeff = 50.0  # 战略选择成本系数
 
         #市场相关参数
         self.cost_coeff = random.uniform(0, 1)  # 成本加成率
         self.Price = (1 + self.cost_coeff) * self.production_cost # 市场价格
         self.fie1 = 0.5 # 价格系数
         self.fie2 = 5 # 性能系数
+
+        # 策略4 承诺策略
+        self.order = 1 if random.uniform(0, 1) > 0.2 else 0
 
         self.Platform = []
 
@@ -323,6 +358,9 @@ class Consumers(mesa.Agent):
                    - self.enter_cost
                    - self.inertia_coeff * self.enter_time
                    - self.strategy_coeff * math.sqrt((self.x - TSE_x) ** 2 + (self.y - TSE_y) ** 2))
+
+        a = self.strategy_coeff * math.sqrt((self.x - TSE_x) ** 2 + (self.y - TSE_y) ** 2)
+
         return utility
 
     def x_y_calculation(self, TSE_number):
@@ -369,9 +407,9 @@ class Consumers(mesa.Agent):
         denominator = 0
         for module in range(1, 7):
             numerator += abs(self.knowledge[module - 1] - first_platform.technology_standard[module - 1])
-            g1 = abs(self.knowledge[module - 1] - max_levels[module - 1])
-            g2 = abs(self.knowledge[module - 1] - min_levels[module - 1])
-            denominator += min(g1, g2)
+            g1 = abs(first_platform.technology_standard[module - 1] - max_levels[module - 1])
+            g2 = abs(first_platform.technology_standard[module - 1] - min_levels[module - 1])
+            denominator += max(g1, g2)
 
         # 计算 y 值
         if denominator != 0:
@@ -384,8 +422,8 @@ class Consumers(mesa.Agent):
     def TSE_decision(self):
         x1, y1 = self.x_y_calculation(1)
         x2, y2 = self.x_y_calculation(2)
-        utility1 = self.unify_calculation(1, x1, x2, self.TSE)
-        utility2 = self.unify_calculation(2, x1, x2, self.TSE)
+        utility1 = self.unify_calculation(1, x1, y1, self.TSE)
+        utility2 = self.unify_calculation(2, x2, y2, self.TSE)
         Platform1 = [agent for agent in self.model.schedule.agents if
                          isinstance(agent, Platform) and agent.TSE == 1]
         Platform2 = [agent for agent in self.model.schedule.agents if
@@ -394,6 +432,7 @@ class Consumers(mesa.Agent):
         if utility1 > utility2:
             if self.TSE == 1:
                 self.enter_time += 1
+                self.Platform = Platform1[0]
             else:
                 self.TSE = 1
                 self.enter_time = 1
@@ -403,6 +442,7 @@ class Consumers(mesa.Agent):
         else:
             if self.TSE == 2:
                 self.enter_time += 1
+                self.Platform = Platform2[0]
             else:
                 self.TSE = 2
                 self.enter_time = 1
@@ -437,7 +477,6 @@ class Consumers(mesa.Agent):
 
             # 根据生态情况生成技术水平
             else:
-
                 min_tech = int(min_tech_level[module - 1])
                 max_tech = max(int(max_tech_level[module - 1]), 2)
 
@@ -459,7 +498,7 @@ class Consumers(mesa.Agent):
 
         # 如果 consumers_in_category 为空，直接返回空列表
         if not consumers_in_category:
-            return []
+            return [0, 0, 0, 0, 0, 0]
 
         # 初始化max_tech_level为知识列表长度的最小值
         max_tech_level = [float('-inf')] * len(consumers_in_category[0].knowledge)
@@ -478,7 +517,7 @@ class Consumers(mesa.Agent):
 
         # 如果 consumers_in_category 为空，直接返回空列表
         if not consumers_in_category:
-            return []
+            return [0, 0, 0, 0, 0, 0]
 
         # 初始化max_tech_level为知识列表长度的最小值
         min_tech_level = [float('inf')] * len(consumers_in_category[0].knowledge)
@@ -511,10 +550,11 @@ class Consumers(mesa.Agent):
     def evaluate_satisfaction(self):
         Platform_involved = [agent for agent in self.model.schedule.agents if
                              isinstance(agent, Platform) and agent.TSE == self.TSE]
+        technology_standards = [platform.technology_standard for platform in Platform_involved][0]
 
         total_difference = 0 # 总差距
         TS_ultify = False   # 有效性
-        technology_standards = [platform.technology_standard for platform in Platform_involved][0]
+
 
         #判断技术标准是否有效
         for consumer_level, consumer_demand, module_level in zip(self.knowledge, self.demand, technology_standards):
@@ -526,8 +566,14 @@ class Consumers(mesa.Agent):
 
         # 若有效则进行满意
         if TS_ultify == True and total_difference <= self.match_threshold:
+            # 技术采用
+            for i in range(len(technology_standards)):
+                if technology_standards[i] > self.knowledge[i]:
+                    self.knowledge[i] = technology_standards[i]
+
             self.satisfaction = True
             self.Match_time = 0
+            self.wealth -= total_difference * self.develop_cost
         else:
             self.satisfaction = False
             self.Match_time += 1
@@ -625,9 +671,6 @@ class Platform(mesa.Agent):
     #@jit
     def match(self):  # 技术标准匹配过程
         # 初始化一个包含 6 个空列表的列表，用于存储每个模块的 Owners 对象
-        print("运行平台：" + str(self.TSE))
-        print("运行周期：" + str(self.model.schedule.steps))
-
         Onwer_in_category = [[] for _ in range(6)]
 
         # 遍历模块编号，并将符合条件的 Owners 对象加入到相应的列表中
@@ -659,12 +702,17 @@ class Platform(mesa.Agent):
             Match_number = 0
             for demander in Demander_in_catogery:
                 if demander.Pre_evaluate(list(combination)):
-                    Match_number += 1
-            if Match_number>Max_Match_nunber:
+                    # 策略4
+                    if demander.order == 1:
+                        Match_number += 2
+                    else:
+                        Match_number += 1
+            if Match_number > Max_Match_nunber:
                 Max_Match_nunber = Match_number
                 Best_TS = list(combination)
 
-        self.technology_standard = Best_TS
+        if Best_TS is not None and Max_Match_nunber > 0:
+            self.technology_standard = Best_TS
 
         # 记录技术标准的来源
         Participate_provider = [[] for _ in range(6)]
@@ -676,15 +724,22 @@ class Platform(mesa.Agent):
                                                 and agent.module == module
                                                 and agent.level == self.technology_standard[module - 1]]
 
+            # 承诺策略
             if Participate_provider[module - 1]:
-                selected_agent = random.choice(Participate_provider[module - 1])
+                # 筛选 order == 1
+                prioritized_agents = [agent for agent in Participate_provider[module - 1] if agent.order == 1]
+
+                # 判断是否存在承诺的个体
+                if prioritized_agents:
+                    selected_agent = random.choice(prioritized_agents)
+                else:
+                    selected_agent = random.choice(Participate_provider[module - 1])
                 Provider_TS.append(selected_agent)
             else:
                 Provider_TS.append(None)  # 如果列表为空，添加 None 表示没有可选 agent
         self.Provider_participate = Provider_TS
 
         return Best_TS, Provider_TS
-
 
 
 
